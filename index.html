@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Live Flow Dashboard</title>
+<style>
+  :root{
+    --brown:#351c15; --gold:#ffb500; --green:#64a70b; --bg:#f6f7f9; --surface:#fff; --border:#e6e8eb; --text:#1a1f2b; --muted:#667085;
+  }
+  html,body{margin:0;background:var(--bg);color:var(--text);font:600 16px/1.35 system-ui,-apple-system,Segoe UI,Roboto,Arial}
+  .top{background:var(--brown);color:#fff;padding:14px 16px;font-weight:800}
+  .wrap{padding:16px;display:flex;justify-content:center}
+  .card{width:100%;max-width:640px;background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:0 6px 22px rgba(0,0,0,.06);padding:16px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media (max-width:640px){ .grid{grid-template-columns:1fr} }
+  .tile{background:#fff;border:1px solid var(--border);border-radius:14px;padding:12px}
+  .lbl{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.35px}
+  .big{font-size:40px;font-weight:900;margin-top:4px}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
+  input,button{font:600 16px system-ui;border-radius:10px;border:1px solid var(--border);padding:10px 12px}
+  button{background:var(--gold);color:var(--brown);border:0;font-weight:800}
+  .row{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+  .fine{font-size:12px;color:var(--muted);margin-top:8px}
+</style>
+<div class="top">Live Flow</div>
+<div class="wrap">
+  <div class="card">
+    <div class="row">
+      <label>Start Time <input type="time" id="start" required></label>
+      <label>Break (min) <input type="number" id="brk" value="10" min="0" step="1"></label>
+      <button id="nowBtn">Set Now</button>
+      <button id="saveBtn">Save</button>
+    </div>
+    <div class="row">
+      <label>Endpoint <input style="min-width:320px" id="url" placeholder="https://script.google.com/macros/s/XXX/exec"></label>
+      <button id="testBtn">Test</button>
+    </div>
+    <div class="grid" style="margin-top:10px">
+      <div class="tile">
+        <div class="lbl">Pieces</div>
+        <div class="big mono" id="pieces">—</div>
+      </div>
+      <div class="tile">
+        <div class="lbl">Flow (PPH)</div>
+        <div class="big mono" id="flow">—</div>
+      </div>
+      <div class="tile">
+        <div class="lbl">Elapsed (h)</div>
+        <div class="big mono" id="elapsed">—</div>
+      </div>
+      <div class="tile">
+        <div class="lbl">Adjusted (h)</div>
+        <div class="big mono" id="adjusted">—</div>
+      </div>
+    </div>
+    <div class="fine" id="meta">Status: —</div>
+    <div class="row"><button id="refresh">Refresh</button></div>
+  </div>
+</div>
+<script>
+const $ = s => document.querySelector(s);
+function r2(n){ return Math.round((n + Number.EPSILON)*100)/100; }
+
+function savePrefs(){
+  localStorage.setItem('ups_url', $('#url').value.trim());
+  localStorage.setItem('ups_start', $('#start').value);
+  localStorage.setItem('ups_brk', $('#brk').value);
+}
+function loadPrefs(){
+  $('#url').value = localStorage.getItem('ups_url') || '';
+  $('#start').value = localStorage.getItem('ups_start') || '';
+  $('#brk').value = localStorage.getItem('ups_brk') || '10';
+}
+
+function parseStartToday(){
+  const v = $('#start').value;
+  if(!v) return null;
+  const [hh,mm] = v.split(':').map(Number);
+  const d = new Date(); d.setHours(hh||0, mm||0, 0, 0);
+  return d;
+}
+
+async function load(){
+  const url = $('#url').value.trim();
+  if(!url){ $('#meta').textContent = 'Status: Set endpoint URL.'; return; }
+  try{
+    const r = await fetch(url, {cache:'no-store'});
+    const j = await r.json();
+    const d = j.latest || j;
+    const pieces = Number(d.pieces)||0;
+    $('#pieces').textContent = pieces.toLocaleString();
+
+    const start = parseStartToday();
+    const brkMin = Number($('#brk').value)||0;
+    if(start){
+      const elapsedH = Math.max(0, (Date.now() - start.getTime())/36e5);
+      const adjustedH = elapsedH + (brkMin/60);
+      $('#elapsed').textContent = r2(elapsedH).toFixed(2);
+      $('#adjusted').textContent = r2(adjustedH).toFixed(2);
+      const flow = adjustedH>0 ? pieces/adjustedH : 0;
+      $('#flow').textContent = r2(flow).toFixed(2);
+    }else{
+      $('#elapsed').textContent = '—';
+      $('#adjusted').textContent = '—';
+      $('#flow').textContent = '—';
+    }
+    $('#meta').textContent = `Source: ${d.source||'—'} • Updated: ${new Date(d.ts||Date.now()).toLocaleTimeString()}`;
+  }catch(e){
+    $('#meta').textContent = 'Status: No data yet / endpoint unreachable.';
+  }
+}
+
+$('#nowBtn').onclick = () => {
+  const d = new Date(); $('#start').value = d.toLocaleTimeString('en-US',{hour12:false}).slice(0,5);
+};
+$('#saveBtn').onclick = () => { savePrefs(); $('#meta').textContent = 'Saved.'; };
+$('#refresh').onclick = load;
+$('#testBtn').onclick = load;
+loadPrefs();
+load();
+setInterval(load, 10000);
+</script>
